@@ -1,14 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
-
-interface ProfileData {
-  name: string;
-  age: string;
-  city: string;
-  occupation: string;
-  interests: string[];
-  agentName: string;
-}
+import {
+  loadProfile, saveProfile,
+  loadMemory, saveMemorySection,
+  loadAISettings, saveAISettings,
+  loadPrivacy, savePrivacy,
+  type AgentMemory,
+} from "@/lib/storage";
 
 interface AIModel {
   id: string;
@@ -31,23 +29,6 @@ const FREE_MODELS: AIModel[] = [
   { id: "custom", provider: "Свой API", providerLabel: "🔧", name: "OpenAI-совместимый", keyPlaceholder: "ключ...", docsUrl: "" },
 ];
 
-// Разделённое хранилище данных агента
-interface AgentMemory {
-  personal: string;    // личная информация
-  social: string;      // контакты, связи
-  interests: string;   // увлечения, предпочтения
-  work: string;        // профессия, проекты
-  private: string;     // приватное (видит только пользователь)
-}
-
-const DEFAULT_MEMORY: AgentMemory = {
-  personal: "",
-  social: "",
-  interests: "",
-  work: "",
-  private: "",
-};
-
 const MEMORY_SECTIONS = [
   { key: "personal" as keyof AgentMemory, label: "Личное", icon: "User", color: "text-blue-400", hint: "Имя, возраст, город, характер" },
   { key: "interests" as keyof AgentMemory, label: "Интересы", icon: "Heart", color: "text-pink-400", hint: "Хобби, увлечения, предпочтения" },
@@ -65,25 +46,23 @@ const PRIVACY_ITEMS = [
 ];
 
 export default function Profile() {
-  const [profile, setProfile] = useState<ProfileData>({
-    name: "", age: "", city: "", occupation: "", interests: [], agentName: "Мой агент",
-  });
+  // Загружаем данные из localStorage при старте
+  const [profile, setProfile] = useState(loadProfile);
   const [newInterest, setNewInterest] = useState("");
-  const [privacy, setPrivacy] = useState<Record<string, "public" | "request" | "private">>({
-    personal: "request", social: "request", work: "request", interests: "public", contacts: "private",
-  });
+  const [privacy, setPrivacy] = useState(loadPrivacy);
 
   // Нейросеть
-  const [selectedModelId, setSelectedModelId] = useState("deepseek-chat");
-  const [apiKey, setApiKey] = useState("");
-  const [customEndpoint, setCustomEndpoint] = useState("");
-  const [customModelName, setCustomModelName] = useState("");
+  const savedAI = loadAISettings();
+  const [selectedModelId, setSelectedModelId] = useState(savedAI.modelId);
+  const [apiKey, setApiKey] = useState(savedAI.apiKey);
+  const [customEndpoint, setCustomEndpoint] = useState(savedAI.customEndpoint);
+  const [customModelName, setCustomModelName] = useState(savedAI.customModelName);
   const [showKey, setShowKey] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Память агента
-  const [memory, setMemory] = useState<AgentMemory>(DEFAULT_MEMORY);
+  const [memory, setMemory] = useState<AgentMemory>(loadMemory);
   const [activeMemorySection, setActiveMemorySection] = useState<keyof AgentMemory>("personal");
 
   const [saved, setSaved] = useState(false);
@@ -91,6 +70,7 @@ export default function Profile() {
 
   const selectedModel = FREE_MODELS.find((m) => m.id === selectedModelId) || FREE_MODELS[0];
 
+  // Закрытие дропдауна по клику снаружи
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -111,7 +91,16 @@ export default function Profile() {
     setProfile((p) => ({ ...p, interests: p.interests.filter((_, idx) => idx !== i) }));
   };
 
+  // Сохраняем раздел памяти сразу при изменении
+  const handleMemoryChange = useCallback((section: keyof AgentMemory, value: string) => {
+    setMemory((m) => ({ ...m, [section]: value }));
+    saveMemorySection(section, value);
+  }, []);
+
   const handleSave = () => {
+    saveProfile(profile);
+    savePrivacy(privacy);
+    saveAISettings({ modelId: selectedModelId, apiKey, customEndpoint, customModelName });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -125,7 +114,6 @@ export default function Profile() {
   const privacyLabel: Record<string, string> = { public: "Видно", request: "По запросу", private: "Скрыто" };
   const privacyColor: Record<string, string> = { public: "text-emerald-400", request: "text-amber-400", private: "text-muted-foreground" };
 
-  // Группировка моделей по провайдеру
   const providerGroups = FREE_MODELS.reduce<Record<string, AIModel[]>>((acc, m) => {
     if (!acc[m.provider]) acc[m.provider] = [];
     acc[m.provider].push(m);
@@ -205,7 +193,7 @@ export default function Profile() {
                 <div key={field.key} className={`flex items-center gap-2.5 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors ${field.key === "occupation" ? "col-span-2" : ""}`}>
                   <Icon name={field.icon as never} size={14} className="text-muted-foreground flex-shrink-0" />
                   <input
-                    value={profile[field.key as keyof ProfileData] as string}
+                    value={profile[field.key as keyof typeof profile] as string}
                     onChange={(e) => setProfile((p) => ({ ...p, [field.key]: e.target.value }))}
                     placeholder={field.placeholder}
                     className="bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 flex-1 min-w-0"
@@ -268,11 +256,10 @@ export default function Profile() {
           <div className="flex flex-col h-full">
             <div className="px-5 pt-4 pb-2">
               <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-                Данные хранятся на твоём устройстве, разделены по категориям. Агент читает и записывает сюда то, что узнаёт о тебе.
+                Данные хранятся на твоём устройстве, разделены по категориям. Агент читает и записывает сюда то, что узнаёт о тебе — автоматически или после разговора.
               </p>
             </div>
 
-            {/* Категории */}
             <div className="flex gap-1.5 px-5 pb-3 overflow-x-auto flex-shrink-0 scrollbar-none">
               {MEMORY_SECTIONS.map((s) => (
                 <button
@@ -290,7 +277,6 @@ export default function Profile() {
               ))}
             </div>
 
-            {/* Редактор */}
             {MEMORY_SECTIONS.filter((s) => s.key === activeMemorySection).map((section) => (
               <div key={section.key} className="flex-1 flex flex-col px-5 pb-5 animate-fade-in">
                 <div className="flex items-center gap-2 mb-2">
@@ -303,16 +289,16 @@ export default function Profile() {
                 <p className="text-[11px] text-muted-foreground/60 mb-2">{section.hint}</p>
                 <textarea
                   value={memory[section.key]}
-                  onChange={(e) => setMemory((m) => ({ ...m, [section.key]: e.target.value }))}
+                  onChange={(e) => handleMemoryChange(section.key, e.target.value)}
                   placeholder={`Агент будет записывать сюда информацию о тебе...\n\nТы тоже можешь добавить что-нибудь вручную.`}
                   className="flex-1 min-h-[200px] bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none placeholder:text-muted-foreground/30 focus:border-primary/30 transition-colors resize-none leading-relaxed"
                 />
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-[10px] text-muted-foreground/40">
-                    {memory[section.key].length} символов
+                    {memory[section.key].length} символов · сохраняется автоматически
                   </span>
                   <button
-                    onClick={() => setMemory((m) => ({ ...m, [section.key]: "" }))}
+                    onClick={() => handleMemoryChange(section.key, "")}
                     className="text-[11px] text-muted-foreground/50 hover:text-destructive transition-colors"
                   >
                     Очистить
@@ -329,7 +315,6 @@ export default function Profile() {
             <div>
               <div className="text-xs font-medium text-muted-foreground mb-2">Модель агента</div>
 
-              {/* Дропдаун выбора модели */}
               <div className="relative" ref={dropdownRef}>
                 <button
                   onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
@@ -350,7 +335,7 @@ export default function Profile() {
                 </button>
 
                 {modelDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-card border border-border rounded-2xl shadow-xl z-50 overflow-hidden animate-scale-in">
+                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-card border border-border rounded-2xl shadow-xl z-50 overflow-hidden">
                     <div className="max-h-72 overflow-y-auto py-1.5">
                       {Object.entries(providerGroups).map(([providerName, models]) => (
                         <div key={providerName}>
@@ -377,9 +362,8 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Кастомный endpoint */}
             {selectedModelId === "custom" && (
-              <div className="space-y-2 animate-fade-in">
+              <div className="space-y-2">
                 <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors">
                   <Icon name="Globe" size={14} className="text-muted-foreground flex-shrink-0" />
                   <input
@@ -401,7 +385,6 @@ export default function Profile() {
               </div>
             )}
 
-            {/* API ключ */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <div className="text-xs font-medium text-muted-foreground">API ключ</div>
@@ -442,12 +425,19 @@ export default function Profile() {
                 </p>
               </div>
               <div className="flex items-start gap-2.5">
-                <Icon name="Zap" size={13} className="text-primary mt-0.5 flex-shrink-0" />
+                <Icon name="HardDrive" size={13} className="text-primary mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                  <span className="text-foreground/70 font-medium">Без ключа:</span> используется общий доступ — работает сразу, но история чатов может храниться на сервере.
+                  <span className="text-foreground/70 font-medium">Память агента</span> хранится только на твоём устройстве. Никакой сервер её не получает.
                 </p>
               </div>
             </div>
+
+            <button
+              onClick={handleSave}
+              className="w-full py-3 bg-primary/20 text-primary rounded-xl text-sm font-medium hover:bg-primary/30 transition-colors"
+            >
+              Сохранить настройки
+            </button>
           </div>
         )}
       </div>
