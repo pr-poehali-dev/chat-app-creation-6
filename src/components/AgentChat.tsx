@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { sendToAI, type ChatMessage } from "@/lib/ai";
+import { sendToAI, extractMemoryFacts, type ChatMessage } from "@/lib/ai";
 import { loadProfile, loadAISettings } from "@/lib/storage";
 
 interface Message {
@@ -41,6 +41,7 @@ export default function AgentChat() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedFacts, setSavedFacts] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -90,6 +91,22 @@ export default function AgentChat() {
         time: getTime(),
       };
       setMessages((prev) => [...prev, agentMsg]);
+
+      // Фоновое извлечение фактов — не блокирует UI
+      extractMemoryFacts(text, reply).then((updates) => {
+        if (updates.length > 0) {
+          const labels: Record<string, string> = {
+            personal: "личное",
+            interests: "интересы",
+            work: "работа",
+            social: "социальное",
+            private: "заметки",
+          };
+          const facts = updates.map((u) => `${labels[u.section] ?? u.section}: ${u.text}`);
+          setSavedFacts(facts);
+          setTimeout(() => setSavedFacts([]), 5000);
+        }
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Неизвестная ошибка";
       setError(msg);
@@ -212,6 +229,17 @@ export default function AgentChat() {
 
         <div ref={bottomRef} />
       </div>
+
+      {/* Уведомление о сохранённых фактах */}
+      {savedFacts.length > 0 && (
+        <div className="mx-4 mb-2 px-3 py-2 bg-primary/10 border border-primary/20 rounded-xl flex gap-2 items-start animate-fade-in">
+          <Icon name="BrainCircuit" size={14} className="text-primary flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-primary/80 leading-relaxed">
+            <span className="font-medium">Запомнил: </span>
+            {savedFacts.join(" · ")}
+          </div>
+        </div>
+      )}
 
       {/* Ввод */}
       <div className="px-4 pb-4 pt-2">

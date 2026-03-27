@@ -1,7 +1,13 @@
 // Универсальный клиент нейросети — работает напрямую из браузера
 // Поддерживает DeepSeek, OpenRouter, Groq и любой OpenAI-совместимый API
 
-import { loadAISettings, loadMemory, loadProfile } from "@/lib/storage";
+import { loadAISettings, loadMemory, loadProfile, appendToMemorySection } from "@/lib/storage";
+import type { AgentMemory } from "@/lib/storage";
+
+export interface MemoryUpdate {
+  section: keyof AgentMemory;
+  text: string;
+}
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -63,6 +69,75 @@ export function buildSystemPrompt(): string {
   );
 
   return parts.join("\n");
+}
+
+/**
+ * Анализирует последний обмен и извлекает факты для записи в память.
+ * Возвращает массив обновлений или пустой массив, если нечего запоминать.
+ */
+export async function extractMemoryFacts(
+  userMessage: string,
+  agentReply: string
+): Promise<MemoryUpdate[]> {
+  const settings = loadAISettings();
+  const { modelId, apiKey, customEndpoint, customModelName } = settings;
+  const endpoint = getEndpoint(modelId, customEndpoint);
+  const key = getApiKey(modelId, apiKey);
+  const model = modelId === "custom" ? customModelName : modelId;
+
+  const prompt = `Проанализируй следующий диалог и выдели только НОВЫЕ факты о пользователе, которые стоит запомнить в долгосрочной памяти.
+
+Пользователь написал: "${userMessage}"
+Агент ответил: "${agentReply}"
+
+Распредели факты по категориям:
+- personal: личные данные (имя, возраст, город, семья, здоровье)
+- interests: хобби, увлечения, интересы
+- work: работа, профессия, бизнес, проекты
+- social: друзья, знакомые, социальные связи
+- private: цели, мечты, страхи, важные переживания
+
+Ответь ТОЛЬКО в формате JSON (без markdown, без пояснений):
+{"updates": [{"section": "personal", "text": "факт для запоминания"}, ...]}
+
+Если новых фактов нет — верни: {"updates": []}
+Каждый факт — короткое утверждение (до 20 слов). Не дублируй то, что уже известно.`;
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  if (endpoint.includes("openrouter")) {
+    headers["HTTP-Referer"] = window.location.origin;
+    headers["X-Title"] = "Личный агент";
+  }
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 512,
+        temperature: 0.1,
+      }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const raw = data?.choices?.[0]?.message?.content?.trim() ?? "";
+    // Пробуем распарсить JSON — иногда модель добавляет ```json обёртку
+    const jsonStr = raw.replace(/```json\n?|\n?```/g, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    const updates: MemoryUpdate[] = parsed?.updates ?? [];
+    // Сохраняем сразу в localStorage
+    for (const upd of updates) {
+      if (upd.section && upd.text) {
+        appendToMemorySection(upd.section as keyof AgentMemory, upd.text);
+      }
+    }
+    return updates;
+  } catch {
+    return [];
+  }
 }
 
 /** Основная функция — отправляет историю сообщений и возвращает ответ агента */
