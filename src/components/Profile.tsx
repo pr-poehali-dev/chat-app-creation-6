@@ -189,20 +189,36 @@ export default function Profile() {
           </div>
         </div>
 
-        <div className="pb-4">
-          <div className="text-xs font-medium text-muted-foreground mb-2">API ключ (DeepSeek)</div>
-          <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors">
-            <Icon name="Key" size={14} className="text-muted-foreground" />
-            <input
-              type="password"
-              placeholder="sk-..."
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 font-mono"
-            />
-            <Icon name="Eye" size={14} className="text-muted-foreground cursor-pointer hover:text-foreground transition-colors" />
+        <div className="pb-4 space-y-3">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-xs font-medium text-muted-foreground">API ключ DeepSeek</div>
+              <span className="text-[10px] text-muted-foreground/50 bg-secondary px-2 py-0.5 rounded-full">необязательно</span>
+            </div>
+            <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors">
+              <Icon name="Key" size={14} className="text-muted-foreground" />
+              <input
+                type="password"
+                placeholder="sk-... (оставь пустым для общего доступа)"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/40 font-mono"
+              />
+              <Icon name="Eye" size={14} className="text-muted-foreground cursor-pointer hover:text-foreground transition-colors" />
+            </div>
           </div>
-          <p className="text-[11px] text-muted-foreground/60 mt-1.5 px-1">
-            Ключ хранится только на устройстве, не передаётся третьим лицам
-          </p>
+          <div className="p-3.5 bg-secondary/30 rounded-xl space-y-2.5">
+            <div className="flex items-start gap-2.5">
+              <Icon name="ShieldCheck" size={13} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                <span className="text-foreground/70 font-medium">Свой ключ:</span> данные обрабатываются напрямую в DeepSeek, мы ничего не видим. Максимальная приватность.
+              </p>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Icon name="Zap" size={13} className="text-primary mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                <span className="text-foreground/70 font-medium">Без ключа:</span> используется общий доступ — работает сразу, но история чатов может храниться на сервере.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
