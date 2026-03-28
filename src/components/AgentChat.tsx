@@ -11,14 +11,8 @@ interface Message {
 }
 
 const FREE_MODELS: Record<string, string> = {
-  "deepseek-chat": "DeepSeek V3",
-  "mistralai/mistral-7b-instruct:free": "Mistral 7B",
-  "meta-llama/llama-3.3-70b-instruct:free": "Llama 3.3 70B",
-  "google/gemma-3-27b-it:free": "Gemma 3 27B",
+  "anthropic/claude-3.5-haiku:free": "Claude 3.5 Haiku",
   "deepseek/deepseek-chat-v3-0324:free": "DeepSeek V3",
-  "llama-3.3-70b-versatile": "Llama 3.3 70B",
-  "llama-3.1-8b-instant": "Llama 3.1 8B",
-  "gemma2-9b-it": "Gemma 2 9B",
   "custom": "Свой API",
 };
 

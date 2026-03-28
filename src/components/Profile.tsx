@@ -18,14 +18,8 @@ interface AIModel {
 }
 
 const FREE_MODELS: AIModel[] = [
-  { id: "deepseek-chat", provider: "DeepSeek", providerLabel: "🇨🇳", name: "DeepSeek V3", keyPlaceholder: "sk-...", docsUrl: "https://platform.deepseek.com/api-keys" },
-  { id: "mistralai/mistral-7b-instruct:free", provider: "OpenRouter", providerLabel: "🔀", name: "Mistral 7B", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
-  { id: "meta-llama/llama-3.3-70b-instruct:free", provider: "OpenRouter", providerLabel: "🔀", name: "Llama 3.3 70B", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
-  { id: "google/gemma-3-27b-it:free", provider: "OpenRouter", providerLabel: "🔀", name: "Gemma 3 27B", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
-  { id: "deepseek/deepseek-chat-v3-0324:free", provider: "OpenRouter", providerLabel: "🔀", name: "DeepSeek V3 (OpenRouter)", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
-  { id: "llama-3.3-70b-versatile", provider: "Groq", providerLabel: "⚡", name: "Llama 3.3 70B", keyPlaceholder: "gsk_...", docsUrl: "https://console.groq.com/keys" },
-  { id: "llama-3.1-8b-instant", provider: "Groq", providerLabel: "⚡", name: "Llama 3.1 8B (быстрый)", keyPlaceholder: "gsk_...", docsUrl: "https://console.groq.com/keys" },
-  { id: "gemma2-9b-it", provider: "Groq", providerLabel: "⚡", name: "Gemma 2 9B", keyPlaceholder: "gsk_...", docsUrl: "https://console.groq.com/keys" },
+  { id: "anthropic/claude-3.5-haiku:free", provider: "Claude", providerLabel: "🧠", name: "Claude 3.5 Haiku", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
+  { id: "deepseek/deepseek-chat-v3-0324:free", provider: "DeepSeek", providerLabel: "🇨🇳", name: "DeepSeek V3", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
   { id: "custom", provider: "Свой API", providerLabel: "🔧", name: "OpenAI-совместимый", keyPlaceholder: "ключ...", docsUrl: "" },
 ];
 
