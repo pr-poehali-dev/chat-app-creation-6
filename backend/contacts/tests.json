@@ -1,9 +1,26 @@
 {
   "tests": [
     {
-      "name": "List contacts unauthorized",
+      "name": "List contacts - no token 401",
       "method": "GET",
-      "path": "/",
+      "path": "/?action=list",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Search - no token 401",
+      "method": "GET",
+      "path": "/?action=search&q=test",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Add contact - no token 401",
+      "method": "POST",
+      "path": "/?action=add",
+      "body": {"username": "someone"},
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"

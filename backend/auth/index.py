@@ -31,19 +31,20 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": cors_headers(), "body": ""}
 
     method = event.get("httpMethod", "GET")
-    path = event.get("path", "/")
     headers = event.get("headers", {})
     token = headers.get("X-Auth-Token") or headers.get("x-auth-token")
+    params = event.get("queryStringParameters") or {}
+    action = params.get("action", "")
 
-    if method == "POST" and path.endswith("/register"):
+    if method == "POST" and action == "register":
         return register(event)
-    elif method == "POST" and path.endswith("/login"):
+    elif method == "POST" and action == "login":
         return login(event)
-    elif method == "POST" and path.endswith("/logout"):
+    elif method == "POST" and action == "logout":
         return logout(token)
-    elif method == "GET" and path.endswith("/me"):
+    elif method == "GET" and action == "me":
         return get_me(token)
-    elif method == "PUT" and path.endswith("/me"):
+    elif method == "PUT" and action == "me":
         return update_me(event, token)
     else:
         return {"statusCode": 404, "headers": cors_headers(), "body": json.dumps({"error": "Not found"})}

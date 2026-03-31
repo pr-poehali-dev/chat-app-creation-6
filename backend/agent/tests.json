@@ -1,17 +1,42 @@
 {
   "tests": [
     {
-      "name": "Get memory unauthorized",
+      "name": "Get memory - no token 401",
       "method": "GET",
-      "path": "/",
+      "path": "/?action=memory",
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Get agent settings unauthorized",
+      "name": "Get settings - no token 401",
       "method": "GET",
-      "path": "/",
+      "path": "/?action=settings",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Agent chat - no token 401",
+      "method": "POST",
+      "path": "/?action=chat",
+      "body": {"message": "Привет", "history": []},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Export memory - no token 401",
+      "method": "GET",
+      "path": "/?action=export",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "List agents - no token 401",
+      "method": "GET",
+      "path": "/?action=list_agents",
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"

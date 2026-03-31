@@ -1,11 +1,56 @@
 {
   "tests": [
     {
-      "name": "OPTIONS preflight",
+      "name": "Register new user",
       "method": "POST",
-      "path": "/",
-      "body": {"login": "nonexistent_zz99", "password": "wrong"},
-      "expectedStatus": 404,
+      "path": "/?action=register",
+      "body": {
+        "username": "testpino01",
+        "email": "testpino01@pino.test",
+        "password": "secret123",
+        "display_name": "Тест Пино"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {"token": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Register duplicate - 409",
+      "method": "POST",
+      "path": "/?action=register",
+      "body": {
+        "username": "testpino01",
+        "email": "testpino01@pino.test",
+        "password": "secret123",
+        "display_name": "Тест Пино"
+      },
+      "expectedStatus": 409,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login valid",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {"login": "testpino01", "password": "secret123"},
+      "expectedStatus": 200,
+      "expectedBody": {"token": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login wrong password - 401",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {"login": "testpino01", "password": "badpass"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get me - no token 401",
+      "method": "GET",
+      "path": "/?action=me",
+      "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     }

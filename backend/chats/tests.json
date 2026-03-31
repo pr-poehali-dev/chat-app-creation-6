@@ -1,9 +1,26 @@
 {
   "tests": [
     {
-      "name": "List chats unauthorized",
+      "name": "List chats - no token 401",
       "method": "GET",
-      "path": "/",
+      "path": "/?action=list",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Create chat - no token 401",
+      "method": "POST",
+      "path": "/?action=create",
+      "body": {"type": "group", "name": "Тест"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get messages - no token 401",
+      "method": "GET",
+      "path": "/?action=messages&chat_id=00000000-0000-0000-0000-000000000000",
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"

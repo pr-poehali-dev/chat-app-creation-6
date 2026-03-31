@@ -31,10 +31,10 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": cors(), "body": ""}
 
     method = event.get("httpMethod", "GET")
-    path = event.get("path", "/")
     headers = event.get("headers", {})
     token = headers.get("X-Auth-Token") or headers.get("x-auth-token")
     params = event.get("queryStringParameters") or {}
+    action = params.get("action", "")
 
     conn = get_conn()
     cur = conn.cursor()
@@ -45,14 +45,14 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
 
     try:
-        if method == "GET" and path.endswith("/contacts"):
+        if method == "GET" and action == "list":
             return list_contacts(cur, user_id, params)
-        elif method == "POST" and path.endswith("/contacts"):
+        elif method == "POST" and action == "add":
             return add_contact(cur, conn, event, user_id)
-        elif method == "PUT" and "/contacts/" in path:
-            contact_id = path.split("/contacts/")[1]
+        elif method == "PUT" and action == "respond":
+            contact_id = params.get("id", "")
             return update_contact(cur, conn, event, user_id, contact_id)
-        elif method == "GET" and path.endswith("/search"):
+        elif method == "GET" and action == "search":
             return search_users(cur, user_id, params)
         else:
             return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Not found"})}

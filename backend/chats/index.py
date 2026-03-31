@@ -31,10 +31,11 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": cors(), "body": ""}
 
     method = event.get("httpMethod", "GET")
-    path = event.get("path", "/")
     headers = event.get("headers", {})
     token = headers.get("X-Auth-Token") or headers.get("x-auth-token")
     params = event.get("queryStringParameters") or {}
+    action = params.get("action", "")
+    chat_id = params.get("chat_id", "")
 
     conn = get_conn()
     cur = conn.cursor()
@@ -45,21 +46,17 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
 
     try:
-        if method == "GET" and "/chats" in path and not any(x in path for x in ["/messages", "/members"]):
+        if method == "GET" and action == "list":
             return list_chats(cur, user_id, params)
-        elif method == "POST" and path.endswith("/chats"):
+        elif method == "POST" and action == "create":
             return create_chat(cur, conn, event, user_id)
-        elif method == "GET" and "/chats/" in path and path.endswith("/messages"):
-            chat_id = path.split("/chats/")[1].replace("/messages", "")
+        elif method == "GET" and action == "messages" and chat_id:
             return get_messages(cur, chat_id, user_id, params)
-        elif method == "POST" and "/chats/" in path and path.endswith("/messages"):
-            chat_id = path.split("/chats/")[1].replace("/messages", "")
+        elif method == "POST" and action == "send" and chat_id:
             return send_message(cur, conn, event, chat_id, user_id)
-        elif method == "POST" and "/chats/" in path and path.endswith("/members"):
-            chat_id = path.split("/chats/")[1].replace("/members", "")
+        elif method == "POST" and action == "add_member" and chat_id:
             return add_member(cur, conn, event, chat_id, user_id)
-        elif method == "GET" and "/chats/" in path and path.endswith("/members"):
-            chat_id = path.split("/chats/")[1].replace("/members", "")
+        elif method == "GET" and action == "members" and chat_id:
             return get_members(cur, chat_id, user_id)
         else:
             return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Not found"})}

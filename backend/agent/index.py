@@ -56,9 +56,10 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": cors(), "body": ""}
 
     method = event.get("httpMethod", "GET")
-    path = event.get("path", "/")
     headers = event.get("headers", {})
     token = headers.get("X-Auth-Token") or headers.get("x-auth-token")
+    params = event.get("queryStringParameters") or {}
+    action = params.get("action", "")
 
     conn = get_conn()
     cur = conn.cursor()
@@ -69,25 +70,25 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
 
     try:
-        if method == "POST" and path.endswith("/chat"):
+        if method == "POST" and action == "chat":
             return agent_chat(cur, conn, event, user_id)
-        elif method == "GET" and path.endswith("/memory"):
+        elif method == "GET" and action == "memory":
             return get_memory(cur, user_id)
-        elif method == "POST" and path.endswith("/memory"):
+        elif method == "POST" and action == "save_memory":
             return save_memory_fact(cur, conn, event, user_id)
-        elif method == "POST" and path.endswith("/feedback"):
+        elif method == "POST" and action == "feedback":
             return apply_feedback(cur, conn, event, user_id)
-        elif method == "GET" and path.endswith("/settings"):
+        elif method == "GET" and action == "settings":
             return get_agent_settings(cur, user_id)
-        elif method == "PUT" and path.endswith("/settings"):
+        elif method == "PUT" and action == "settings":
             return update_agent_settings(cur, conn, event, user_id)
-        elif method == "GET" and path.endswith("/export"):
+        elif method == "GET" and action == "export":
             return export_memory(cur, user_id)
-        elif method == "POST" and path.endswith("/import"):
+        elif method == "POST" and action == "import":
             return import_memory(cur, conn, event, user_id)
-        elif method == "GET" and "/agents" in path and not any(x in path for x in ["/chat", "/memory", "/settings", "/export", "/import", "/feedback"]):
+        elif method == "GET" and action == "list_agents":
             return list_agents(cur, user_id)
-        elif method == "POST" and "/agents" in path and not any(x in path for x in ["/chat", "/memory", "/settings", "/export", "/import", "/feedback"]):
+        elif method == "POST" and action == "create_agent":
             return create_agent(cur, conn, event, user_id)
         else:
             return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Not found"})}
