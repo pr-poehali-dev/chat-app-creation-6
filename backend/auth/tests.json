@@ -1,0 +1,13 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "POST",
+      "path": "/",
+      "body": {"login": "nonexistent_zz99", "password": "wrong"},
+      "expectedStatus": 404,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

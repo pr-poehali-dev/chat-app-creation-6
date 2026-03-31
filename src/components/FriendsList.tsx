@@ -1,193 +1,234 @@
-import { useState } from "react";
-import Icon from "@/components/ui/icon";
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
+import Icon from '@/components/ui/icon';
 
-interface Friend {
+interface Contact {
   id: string;
-  name: string;
-  avatar: string;
-  status: "online" | "away" | "offline";
-  lastMessage: string;
-  lastTime: string;
-  unread?: number;
-  agentActive?: boolean;
+  status: string;
+  direction: string;
+  user: {
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+    is_online: boolean;
+    last_seen?: string;
+    agent_name?: string;
+  };
 }
-
-interface Message {
-  id: string;
-  role: "me" | "friend";
-  text: string;
-  time: string;
-}
-
-const FRIENDS: Friend[] = [
-  { id: "1", name: "Алексей", avatar: "А", status: "online", lastMessage: "Агент договорился — встречаемся в пятницу", lastTime: "14:32", unread: 2, agentActive: true },
-  { id: "2", name: "Мария", avatar: "М", status: "online", lastMessage: "Ок, расскажу агенту детали", lastTime: "12:10", agentActive: false },
-  { id: "3", name: "Дмитрий", avatar: "Д", status: "away", lastMessage: "Интересная идея для проекта", lastTime: "вчера" },
-  { id: "4", name: "Анна", avatar: "А", status: "offline", lastMessage: "Спасибо за рекомендацию!", lastTime: "пн" },
-];
-
-const DEMO_MESSAGES: Record<string, Message[]> = {
-  "1": [
-    { id: "1", role: "friend", text: "Привет! Мой агент написал мне, что ты хочешь обсудить проект", time: "14:20" },
-    { id: "2", role: "me", text: "Да! Давай встретимся и обсудим детали", time: "14:25" },
-    { id: "3", role: "friend", text: "Агент договорился — встречаемся в пятницу", time: "14:32" },
-  ],
-  "2": [
-    { id: "1", role: "me", text: "Мария, добавил тебя в контакты!", time: "12:05" },
-    { id: "2", role: "friend", text: "Ок, расскажу агенту детали", time: "12:10" },
-  ],
-};
-
-const statusColor: Record<Friend["status"], string> = {
-  online: "bg-emerald-500",
-  away: "bg-amber-500",
-  offline: "bg-muted-foreground",
-};
 
 export default function FriendsList() {
-  const [selected, setSelected] = useState<Friend | null>(null);
-  const [input, setInput] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [messages, setMessages] = useState<Record<string, Message[]>>(DEMO_MESSAGES);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [pending, setPending] = useState<Contact[]>([]);
+  const [tab, setTab] = useState<'friends' | 'requests' | 'add'>('friends');
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState<{ id: string; username: string; display_name: string; is_online: boolean }[]>([]);
+  const [addUsername, setAddUsername] = useState('');
+  const [addStatus, setAddStatus] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const sendMessage = () => {
-    if (!input.trim() || !selected) return;
-    const msg: Message = {
-      id: Date.now().toString(),
-      role: "me",
-      text: input.trim(),
-      time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessages((prev) => ({
-      ...prev,
-      [selected.id]: [...(prev[selected.id] || []), msg],
-    }));
-    setInput("");
-  };
+  useEffect(() => {
+    loadContacts();
+  }, []);
 
-  if (selected) {
-    const chat = messages[selected.id] || [];
-    return (
-      <div className="flex flex-col h-full animate-fade-in">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
-          <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground transition-colors mr-1">
-            <Icon name="ChevronLeft" size={20} />
-          </button>
-          <div className="relative">
-            <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold">
-              {selected.avatar}
-            </div>
-            <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 ${statusColor[selected.status]} rounded-full border-2 border-background`} />
-          </div>
-          <div className="flex-1">
-            <div className="text-sm font-semibold">{selected.name}</div>
-            <div className="text-xs text-muted-foreground capitalize">{selected.status === "online" ? "онлайн" : selected.status === "away" ? "отошёл" : "не в сети"}</div>
-          </div>
-          {selected.agentActive && (
-            <div className="flex items-center gap-1.5 text-xs text-primary bg-primary/10 px-2.5 py-1 rounded-full">
-              <Icon name="Sparkles" size={11} />
-              <span>Агент активен</span>
-            </div>
-          )}
-        </div>
+  async function loadContacts() {
+    try {
+      const [acc, pend] = await Promise.all([
+        api.contacts.list('accepted'),
+        api.contacts.list('pending'),
+      ]);
+      setContacts(acc.contacts || []);
+      setPending((pend.contacts || []).filter((c: Contact) => c.direction === 'incoming'));
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          {chat.length === 0 && (
-            <div className="text-center text-muted-foreground text-sm py-8">Начни общение</div>
-          )}
-          {chat.map((msg) => (
-            <div key={msg.id} className={`flex animate-fade-in ${msg.role === "me" ? "flex-row-reverse" : ""}`}>
-              <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                msg.role === "me" ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-card text-foreground rounded-tl-sm"
-              }`}>
-                {msg.text}
-                <div className={`text-[10px] mt-1 ${msg.role === "me" ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{msg.time}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+  async function search(q: string) {
+    setSearchQ(q);
+    if (q.length < 2) { setSearchResults([]); return; }
+    try {
+      const data = await api.contacts.search(q);
+      setSearchResults(data.users || []);
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
-        <div className="px-4 pb-4 pt-2">
-          <div className="flex gap-2 items-center bg-card border border-border rounded-2xl px-4 py-2.5 focus-within:border-primary/50 transition-colors">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder={`Написать ${selected.name}...`}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-            <button onClick={sendMessage} disabled={!input.trim()} className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center disabled:opacity-30 hover:bg-primary/90 transition-all">
-              <Icon name="ArrowUp" size={14} className="text-primary-foreground" />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  async function addFriend() {
+    if (!addUsername.trim()) return;
+    setLoading(true); setAddStatus('');
+    try {
+      await api.contacts.add({ username: addUsername.trim() });
+      setAddStatus('Заявка отправлена!');
+      setAddUsername('');
+    } catch (err: unknown) {
+      setAddStatus(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function respond(id: string, action: 'accept' | 'reject') {
+    try {
+      await api.contacts.respond(id, action);
+      await loadContacts();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function lastSeen(iso?: string) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const diff = Date.now() - d.getTime();
+    if (diff < 60000) return 'только что';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} мин. назад`;
+    if (diff < 86400000) return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString('ru', { day: 'numeric', month: 'short' });
   }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-        <h2 className="text-sm font-semibold">Друзья</h2>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className="text-muted-foreground hover:text-primary transition-colors"
-        >
-          <Icon name="UserPlus" size={18} />
-        </button>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <h2 className="text-base font-semibold text-foreground">Контакты</h2>
+        {pending.length > 0 && (
+          <span className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-medium">{pending.length}</span>
+        )}
       </div>
 
-      {showAdd && (
-        <div className="mx-4 mt-3 p-4 bg-card border border-border rounded-2xl animate-scale-in">
-          <div className="text-xs font-medium text-muted-foreground mb-3">Добавить друга</div>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { icon: "Link", label: "По ссылке" },
-              { icon: "Users", label: "Контакты" },
-              { icon: "Share2", label: "Соцсети" },
-            ].map((item) => (
-              <button key={item.label} className="flex flex-col items-center gap-2 p-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-colors text-xs text-muted-foreground hover:text-foreground">
-                <Icon name={item.icon as never} size={18} />
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto">
-        {FRIENDS.map((friend) => (
-          <button
-            key={friend.id}
-            onClick={() => setSelected(friend)}
-            className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-card/60 transition-colors text-left"
-          >
-            <div className="relative flex-shrink-0">
-              <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold">
-                {friend.avatar}
-              </div>
-              <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${statusColor[friend.status]} rounded-full border-2 border-background`} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 justify-between">
-                <span className="text-sm font-medium">{friend.name}</span>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {friend.agentActive && <Icon name="Sparkles" size={11} className="text-primary" />}
-                  <span className="text-[11px] text-muted-foreground">{friend.lastTime}</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground truncate">{friend.lastMessage}</p>
-                {friend.unread && (
-                  <span className="ml-2 flex-shrink-0 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-[10px] font-semibold text-primary-foreground">
-                    {friend.unread}
-                  </span>
-                )}
-              </div>
-            </div>
+      <div className="flex border-b border-border">
+        {(['friends', 'requests', 'add'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-2.5 text-xs font-medium transition-colors ${tab === t ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+            {t === 'friends' ? 'Друзья' : t === 'requests' ? `Заявки${pending.length > 0 ? ` (${pending.length})` : ''}` : 'Добавить'}
           </button>
         ))}
       </div>
+
+      {tab === 'friends' && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-4 pt-3 pb-2">
+            <input
+              value={searchQ}
+              onChange={e => search(e.target.value)}
+              placeholder="Поиск среди друзей..."
+              className="w-full bg-card border border-border rounded-xl px-3.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          {contacts.length === 0 && searchQ.length < 2 && (
+            <div className="flex flex-col items-center justify-center mt-12 px-6 text-center">
+              <div className="text-4xl mb-3">🤝</div>
+              <p className="text-muted-foreground text-sm">Добавь первого друга через вкладку «Добавить»</p>
+            </div>
+          )}
+
+          {(searchQ.length >= 2 ? searchResults : contacts.map(c => c.user)).map(u => (
+            <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b border-border/40 hover:bg-muted/20 transition-colors">
+              <div className="relative">
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
+                  {u.display_name?.[0]?.toUpperCase() || '?'}
+                </div>
+                <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-background ${u.is_online ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">{u.display_name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {u.is_online ? 'онлайн' : lastSeen((u as Contact['user']).last_seen)}
+                </p>
+              </div>
+              {'agent_name' in u && u.agent_name && (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs">{u.agent_name}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'requests' && (
+        <div className="flex-1 overflow-y-auto">
+          {pending.length === 0 && (
+            <div className="flex flex-col items-center justify-center mt-12 text-center px-6">
+              <div className="text-4xl mb-3">📭</div>
+              <p className="text-muted-foreground text-sm">Нет входящих заявок</p>
+            </div>
+          )}
+          {pending.map(c => (
+            <div key={c.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-border/40">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">
+                {c.user.display_name[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">{c.user.display_name}</p>
+                <p className="text-xs text-muted-foreground">@{c.user.username}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => respond(c.id, 'accept')}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs hover:bg-emerald-500/20 transition-colors">
+                  Принять
+                </button>
+                <button onClick={() => respond(c.id, 'reject')}
+                  className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs hover:bg-destructive/20 transition-colors">
+                  Отказать
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'add' && (
+        <div className="flex-1 overflow-y-auto px-4 pt-4 space-y-4">
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <p className="text-sm font-medium text-foreground">Добавить по имени пользователя</p>
+            <div className="flex gap-2">
+              <input
+                value={addUsername}
+                onChange={e => setAddUsername(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addFriend()}
+                placeholder="@username"
+                className="flex-1 bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button onClick={addFriend} disabled={loading || !addUsername.trim()}
+                className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity">
+                {loading ? '...' : 'Добавить'}
+              </button>
+            </div>
+            {addStatus && (
+              <p className={`text-xs ${addStatus.includes('!') ? 'text-emerald-400' : 'text-destructive'}`}>{addStatus}</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <p className="text-sm font-medium text-foreground">Поиск пользователей</p>
+            <input
+              value={searchQ}
+              onChange={e => search(e.target.value)}
+              placeholder="Введите имя или ник..."
+              className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            />
+            <div className="space-y-1">
+              {searchResults.map(u => (
+                <div key={u.id} className="flex items-center gap-3 py-2 border-b border-border/30">
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                    {u.display_name[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-foreground">{u.display_name}</p>
+                    <p className="text-xs text-muted-foreground">@{u.username}</p>
+                  </div>
+                  <button
+                    onClick={() => { setAddUsername(u.username); setTab('add'); }}
+                    className="px-2 py-1 rounded-lg bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors">
+                    <Icon name="UserPlus" size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

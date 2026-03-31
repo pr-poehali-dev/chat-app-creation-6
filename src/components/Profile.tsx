@@ -1,208 +1,181 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import Icon from "@/components/ui/icon";
-import {
-  loadProfile, saveProfile,
-  loadMemory, saveMemorySection,
-  loadAISettings, saveAISettings,
-  loadPrivacy, savePrivacy,
-  type AgentMemory,
-} from "@/lib/storage";
+import { useState, useEffect } from 'react';
+import { api, clearToken } from '@/lib/api';
+import Icon from '@/components/ui/icon';
 
-interface AIModel {
-  id: string;
-  provider: string;
-  providerLabel: string;
-  name: string;
-  keyPlaceholder: string;
-  docsUrl: string;
+interface ProfileProps {
+  onLogout: () => void;
 }
 
-const FREE_MODELS: AIModel[] = [
-  { id: "anthropic/claude-3.5-haiku:free", provider: "Claude", providerLabel: "🧠", name: "Claude 3.5 Haiku", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
-  { id: "deepseek/deepseek-chat-v3-0324:free", provider: "DeepSeek", providerLabel: "🇨🇳", name: "DeepSeek V3", keyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/keys" },
-  { id: "custom", provider: "Свой API", providerLabel: "🔧", name: "OpenAI-совместимый", keyPlaceholder: "ключ...", docsUrl: "" },
+interface UserData {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  avatar_url?: string;
+  bio: string;
+  city: string;
+  age?: number;
+  occupation: string;
+  interests: string[];
+  agent_name: string;
+}
+
+interface AgentSettings {
+  agent_id: string;
+  name: string;
+  model_id: string;
+  custom_endpoint: string;
+  custom_model_name: string;
+  has_api_key: boolean;
+  is_pino: boolean;
+}
+
+const MODELS = [
+  { id: 'deepseek-chat', label: 'DeepSeek V3', group: 'DeepSeek' },
+  { id: 'deepseek-reasoner', label: 'DeepSeek R1', group: 'DeepSeek' },
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', group: 'Groq (бесплатно)' },
+  { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B', group: 'Groq (бесплатно)' },
+  { id: 'anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku', group: 'OpenRouter' },
+  { id: 'custom', label: 'Своя модель', group: 'Custom' },
 ];
 
-const MEMORY_SECTIONS = [
-  { key: "personal" as keyof AgentMemory, label: "Личное", icon: "User", color: "text-blue-400", hint: "Имя, возраст, город, характер" },
-  { key: "interests" as keyof AgentMemory, label: "Интересы", icon: "Heart", color: "text-pink-400", hint: "Хобби, увлечения, предпочтения" },
-  { key: "work" as keyof AgentMemory, label: "Работа", icon: "Briefcase", color: "text-amber-400", hint: "Профессия, навыки, проекты" },
-  { key: "social" as keyof AgentMemory, label: "Социальное", icon: "Users", color: "text-emerald-400", hint: "Друзья, контакты, связи" },
-  { key: "private" as keyof AgentMemory, label: "Приватное", icon: "Lock", color: "text-muted-foreground", hint: "Только ты видишь. Агент не раскрывает это никому." },
-];
+export default function Profile({ onLogout }: ProfileProps) {
+  const [tab, setTab] = useState<'profile' | 'agent' | 'memory'>('profile');
+  const [user, setUser] = useState<UserData | null>(null);
+  const [agentSettings, setAgentSettings] = useState<AgentSettings | null>(null);
+  const [memories, setMemories] = useState<{ id: string; level: string; category: string; content: string; confidence: number }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
 
-const PRIVACY_ITEMS = [
-  { id: "personal", label: "Личное" },
-  { id: "social", label: "Социальное" },
-  { id: "work", label: "Работа" },
-  { id: "interests", label: "Интересы" },
-  { id: "contacts", label: "Контакты" },
-];
-
-export default function Profile() {
-  // Загружаем данные из localStorage при старте
-  const [profile, setProfile] = useState(loadProfile);
-  const [newInterest, setNewInterest] = useState("");
-  const [privacy, setPrivacy] = useState(loadPrivacy);
-
-  // Нейросеть
-  const savedAI = loadAISettings();
-  const [selectedModelId, setSelectedModelId] = useState(savedAI.modelId);
-  const [apiKey, setApiKey] = useState(savedAI.apiKey);
-  const [customEndpoint, setCustomEndpoint] = useState(savedAI.customEndpoint);
-  const [customModelName, setCustomModelName] = useState(savedAI.customModelName);
+  const [profileForm, setProfileForm] = useState({ display_name: '', bio: '', city: '', occupation: '', agent_name: '' });
+  const [agentForm, setAgentForm] = useState({ model_id: 'deepseek-chat', api_key: '', custom_endpoint: '', custom_model_name: '' });
+  const [newInterest, setNewInterest] = useState('');
+  const [interests, setInterests] = useState<string[]>([]);
   const [showKey, setShowKey] = useState(false);
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Память агента
-  const [memory, setMemory] = useState<AgentMemory>(loadMemory);
-  const [activeMemorySection, setActiveMemorySection] = useState<keyof AgentMemory>("personal");
-
-  const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<"profile" | "memory" | "ai">("profile");
-
-  const selectedModel = FREE_MODELS.find((m) => m.id === selectedModelId) || FREE_MODELS[0];
-
-  // Закрытие дропдауна по клику снаружи
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setModelDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    loadAll();
   }, []);
 
-  const addInterest = () => {
-    if (!newInterest.trim()) return;
-    setProfile((p) => ({ ...p, interests: [...p.interests, newInterest.trim()] }));
-    setNewInterest("");
-  };
+  async function loadAll() {
+    try {
+      const [me, settings, mem] = await Promise.all([
+        api.auth.me(),
+        api.agent.settings(),
+        api.agent.memory(),
+      ]);
+      const u = me.user as UserData;
+      setUser(u);
+      setProfileForm({ display_name: u.display_name, bio: u.bio, city: u.city, occupation: u.occupation, agent_name: u.agent_name });
+      setInterests(u.interests || []);
 
-  const removeInterest = (i: number) => {
-    setProfile((p) => ({ ...p, interests: p.interests.filter((_, idx) => idx !== i) }));
-  };
+      const s = settings as AgentSettings;
+      setAgentSettings(s);
+      setAgentForm({ model_id: s.model_id, api_key: '', custom_endpoint: s.custom_endpoint, custom_model_name: s.custom_model_name });
 
-  // Сохраняем раздел памяти сразу при изменении
-  const handleMemoryChange = useCallback((section: keyof AgentMemory, value: string) => {
-    setMemory((m) => ({ ...m, [section]: value }));
-    saveMemorySection(section, value);
-  }, []);
+      setMemories(mem.memories || []);
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
-  const handleSave = () => {
-    saveProfile(profile);
-    savePrivacy(privacy);
-    saveAISettings({ modelId: selectedModelId, apiKey, customEndpoint, customModelName });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
+  async function saveProfile() {
+    setSaving(true); setSaveOk(false);
+    try {
+      await api.auth.update({ ...profileForm, interests });
+      setSaveOk(true);
+      setTimeout(() => setSaveOk(false), 3000);
+      await loadAll();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const cyclePrivacy = (id: string) => {
-    const order: Array<"public" | "request" | "private"> = ["public", "request", "private"];
-    setPrivacy((p) => ({ ...p, [id]: order[(order.indexOf(p[id]) + 1) % order.length] }));
-  };
+  async function saveAgent() {
+    setSaving(true); setSaveOk(false);
+    try {
+      const upd: Record<string, string | boolean> = {
+        name: agentForm.model_id === 'custom' ? agentForm.custom_model_name || 'Агент' : agentSettings?.name || 'Пино',
+        model_id: agentForm.model_id,
+        custom_endpoint: agentForm.custom_endpoint,
+        custom_model_name: agentForm.custom_model_name,
+      };
+      if (agentForm.api_key) upd.api_key_encrypted = agentForm.api_key;
+      await api.agent.updateSettings(upd);
+      setSaveOk(true);
+      setTimeout(() => setSaveOk(false), 3000);
+      await loadAll();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const privacyIcon: Record<string, string> = { public: "Eye", request: "AlertCircle", private: "EyeOff" };
-  const privacyLabel: Record<string, string> = { public: "Видно", request: "По запросу", private: "Скрыто" };
-  const privacyColor: Record<string, string> = { public: "text-emerald-400", request: "text-amber-400", private: "text-muted-foreground" };
+  async function logout() {
+    try { await api.auth.logout(); } catch (e) { console.error(e); }
+    clearToken();
+    onLogout();
+  }
 
-  const providerGroups = FREE_MODELS.reduce<Record<string, AIModel[]>>((acc, m) => {
-    if (!acc[m.provider]) acc[m.provider] = [];
-    acc[m.provider].push(m);
-    return acc;
-  }, {});
+  const levelIcon = (l: string) => l === 'principle' ? '🌳' : l === 'generalization' ? '🌿' : '🍃';
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
-        <h2 className="text-sm font-semibold">Профиль и агент</h2>
-        <button
-          onClick={handleSave}
-          className={`text-xs px-3 py-1.5 rounded-lg transition-all ${saved ? "bg-emerald-500/20 text-emerald-400" : "bg-primary/20 text-primary hover:bg-primary/30"}`}
-        >
-          {saved ? "Сохранено ✓" : "Сохранить"}
-        </button>
+      <div className="px-4 pt-4 pb-3 border-b border-border">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-primary/20 border-2 border-primary/30 flex items-center justify-center text-2xl font-bold text-primary">
+            {user?.display_name?.[0]?.toUpperCase() || '?'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-semibold text-foreground">{user?.display_name || 'Загрузка...'}</p>
+            <p className="text-sm text-muted-foreground">@{user?.username || ''}</p>
+          </div>
+          <button onClick={logout} className="p-2 rounded-lg text-muted-foreground hover:text-destructive transition-colors" title="Выйти">
+            <Icon name="LogOut" size={18} />
+          </button>
+        </div>
       </div>
 
-      {/* Вкладки */}
-      <div className="flex border-b border-border flex-shrink-0">
-        {[
-          { id: "profile" as const, label: "Профиль" },
-          { id: "memory" as const, label: "Память агента" },
-          { id: "ai" as const, label: "Нейросеть" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 py-2.5 text-xs font-medium transition-all border-b-2 ${
-              activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {tab.label}
+      <div className="flex border-b border-border">
+        {(['profile', 'agent', 'memory'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-2.5 text-xs font-medium transition-colors ${tab === t ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+            {t === 'profile' ? 'Профиль' : t === 'agent' ? 'Пино' : 'Память'}
           </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto">
-
-        {/* === ПРОФИЛЬ === */}
-        {activeTab === "profile" && (
-          <div className="px-5 py-4 space-y-5">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center text-2xl font-bold text-muted-foreground">
-                  {profile.name ? profile.name[0].toUpperCase() : "?"}
-                </div>
-                <button className="absolute -bottom-1 -right-1 w-6 h-6 bg-primary rounded-lg flex items-center justify-center">
-                  <Icon name="Plus" size={12} className="text-primary-foreground" />
-                </button>
-              </div>
-              <div className="flex-1">
+        {tab === 'profile' && (
+          <div className="px-4 py-4 space-y-3">
+            {[
+              { key: 'display_name', label: 'Отображаемое имя', placeholder: 'Как тебя зовут' },
+              { key: 'bio', label: 'О себе', placeholder: 'Пару слов о себе' },
+              { key: 'city', label: 'Город', placeholder: 'Где живёшь' },
+              { key: 'occupation', label: 'Работа / учёба', placeholder: 'Чем занимаешься' },
+              { key: 'agent_name', label: 'Имя агента', placeholder: 'Пино' },
+            ].map(f => (
+              <div key={f.key}>
+                <label className="text-xs text-muted-foreground mb-1 block">{f.label}</label>
                 <input
-                  value={profile.name}
-                  onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="Твоё имя"
-                  className="w-full bg-transparent text-base font-semibold outline-none placeholder:text-muted-foreground/50 border-b border-transparent focus:border-primary/30 pb-0.5 transition-colors"
+                  value={profileForm[f.key as keyof typeof profileForm]}
+                  onChange={e => setProfileForm(p => ({ ...p, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                  className="w-full bg-card border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Icon name="Sparkles" size={11} className="text-primary" />
-                  <input
-                    value={profile.agentName}
-                    onChange={(e) => setProfile((p) => ({ ...p, agentName: e.target.value }))}
-                    className="bg-transparent text-xs text-muted-foreground outline-none border-b border-transparent focus:border-primary/30 transition-colors"
-                    placeholder="Имя агента"
-                  />
-                </div>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              {[
-                { key: "city", placeholder: "Город", icon: "MapPin" },
-                { key: "age", placeholder: "Возраст", icon: "Calendar" },
-                { key: "occupation", placeholder: "Работа / занятие", icon: "Briefcase" },
-              ].map((field) => (
-                <div key={field.key} className={`flex items-center gap-2.5 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors ${field.key === "occupation" ? "col-span-2" : ""}`}>
-                  <Icon name={field.icon as never} size={14} className="text-muted-foreground flex-shrink-0" />
-                  <input
-                    value={profile[field.key as keyof typeof profile] as string}
-                    onChange={(e) => setProfile((p) => ({ ...p, [field.key]: e.target.value }))}
-                    placeholder={field.placeholder}
-                    className="bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 flex-1 min-w-0"
-                  />
-                </div>
-              ))}
-            </div>
+            ))}
 
             <div>
-              <div className="text-xs font-medium text-muted-foreground mb-2">Интересы</div>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {profile.interests.map((interest, i) => (
-                  <span key={i} className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 text-primary rounded-full text-xs">
-                    {interest}
-                    <button onClick={() => removeInterest(i)} className="hover:text-destructive transition-colors">
+              <label className="text-xs text-muted-foreground mb-1 block">Интересы</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {interests.map(i => (
+                  <span key={i} className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs">
+                    {i}
+                    <button onClick={() => setInterests(prev => prev.filter(x => x !== i))} className="hover:text-destructive">
                       <Icon name="X" size={10} />
                     </button>
                   </span>
@@ -211,227 +184,127 @@ export default function Profile() {
               <div className="flex gap-2">
                 <input
                   value={newInterest}
-                  onChange={(e) => setNewInterest(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addInterest()}
-                  placeholder="Добавить..."
-                  className="flex-1 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-primary/30 transition-colors"
+                  onChange={e => setNewInterest(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newInterest.trim()) {
+                      setInterests(p => [...p, newInterest.trim()]);
+                      setNewInterest('');
+                    }
+                  }}
+                  placeholder="Добавить интерес..."
+                  className="flex-1 bg-card border border-border rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                 />
-                <button onClick={addInterest} className="px-3 py-2 bg-primary/20 text-primary rounded-xl hover:bg-primary/30 transition-colors">
-                  <Icon name="Plus" size={16} />
+                <button onClick={() => { if (newInterest.trim()) { setInterests(p => [...p, newInterest.trim()]); setNewInterest(''); } }}
+                  className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm hover:bg-primary/20 transition-colors">
+                  +
                 </button>
               </div>
             </div>
 
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1.5">Приватность агента</div>
-              <p className="text-[11px] text-muted-foreground/60 mb-3 leading-relaxed">
-                Твои настройки видны только тебе. Другие участники группы настраивают своего агента независимо.
-              </p>
-              <div className="space-y-1.5">
-                {PRIVACY_ITEMS.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between py-2.5 px-3.5 bg-card border border-border rounded-xl">
-                    <span className="text-sm">{item.label}</span>
-                    <button
-                      onClick={() => cyclePrivacy(item.id)}
-                      className={`flex items-center gap-1.5 text-xs transition-colors ${privacyColor[privacy[item.id]]}`}
-                    >
-                      <Icon name={privacyIcon[privacy[item.id]] as never} size={12} />
-                      {privacyLabel[privacy[item.id]]}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <button onClick={saveProfile} disabled={saving}
+              className={`w-full py-3 rounded-xl text-sm font-medium transition-all ${saveOk ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-primary text-primary-foreground hover:opacity-90'} disabled:opacity-50`}>
+              {saving ? 'Сохраняем...' : saveOk ? '✓ Сохранено' : 'Сохранить'}
+            </button>
           </div>
         )}
 
-        {/* === ПАМЯТЬ АГЕНТА === */}
-        {activeTab === "memory" && (
-          <div className="flex flex-col h-full">
-            <div className="px-5 pt-4 pb-2">
-              <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-                Данные хранятся на твоём устройстве, разделены по категориям. Агент читает и записывает сюда то, что узнаёт о тебе — автоматически или после разговора.
-              </p>
-            </div>
+        {tab === 'agent' && (
+          <div className="px-4 py-4 space-y-4">
+            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <p className="text-sm font-semibold text-foreground">Модель Пино</p>
 
-            <div className="flex gap-1.5 px-5 pb-3 overflow-x-auto flex-shrink-0 scrollbar-none">
-              {MEMORY_SECTIONS.map((s) => (
-                <button
-                  key={s.key}
-                  onClick={() => setActiveMemorySection(s.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all border flex-shrink-0 ${
-                    activeMemorySection === s.key
-                      ? "bg-primary/20 border-primary/30 text-primary"
-                      : "bg-card border-border text-muted-foreground hover:text-foreground"
-                  }`}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">AI-модель</label>
+                <select
+                  value={agentForm.model_id}
+                  onChange={e => setAgentForm(f => ({ ...f, model_id: e.target.value }))}
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
-                  <Icon name={s.icon as never} size={11} className={activeMemorySection === s.key ? "text-primary" : s.color} />
-                  {s.label}
-                </button>
-              ))}
+                  {MODELS.map(m => (
+                    <option key={m.id} value={m.id}>{m.label} ({m.group})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  API-ключ {agentSettings?.has_api_key ? '(уже сохранён)' : ''}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={agentForm.api_key}
+                    onChange={e => setAgentForm(f => ({ ...f, api_key: e.target.value }))}
+                    placeholder={agentSettings?.has_api_key ? '••••••••' : 'sk-...'}
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  />
+                  <button onClick={() => setShowKey(!showKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    <Icon name={showKey ? 'EyeOff' : 'Eye'} size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {agentForm.model_id === 'custom' && (
+                <>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Endpoint URL</label>
+                    <input
+                      value={agentForm.custom_endpoint}
+                      onChange={e => setAgentForm(f => ({ ...f, custom_endpoint: e.target.value }))}
+                      placeholder="https://api.example.com/v1/chat/completions"
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Название модели</label>
+                    <input
+                      value={agentForm.custom_model_name}
+                      onChange={e => setAgentForm(f => ({ ...f, custom_model_name: e.target.value }))}
+                      placeholder="gpt-4o"
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
-            {MEMORY_SECTIONS.filter((s) => s.key === activeMemorySection).map((section) => (
-              <div key={section.key} className="flex-1 flex flex-col px-5 pb-5 animate-fade-in">
-                <div className="flex items-center gap-2 mb-2">
-                  <Icon name={section.icon as never} size={14} className={section.color} />
-                  <span className="text-sm font-medium">{section.label}</span>
-                  {section.key === "private" && (
-                    <span className="text-[10px] bg-secondary text-muted-foreground px-2 py-0.5 rounded-full ml-auto">только для тебя</span>
-                  )}
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-400">
+              <p className="font-medium mb-1">Философия Пино</p>
+              <p className="leading-relaxed opacity-80">«Деревья — это корни земли, тянущиеся к свету. Я помогаю тебе расти, запоминая каждый наш разговор.»</p>
+            </div>
+
+            <button onClick={saveAgent} disabled={saving}
+              className={`w-full py-3 rounded-xl text-sm font-medium transition-all ${saveOk ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-primary text-primary-foreground hover:opacity-90'} disabled:opacity-50`}>
+              {saving ? 'Сохраняем...' : saveOk ? '✓ Сохранено' : 'Сохранить настройки'}
+            </button>
+          </div>
+        )}
+
+        {tab === 'memory' && (
+          <div className="px-4 py-4 space-y-2">
+            <p className="text-xs text-muted-foreground mb-3">
+              {memories.length === 0 ? 'Пино ещё ничего не запомнил. Поговори с ним!' : `${memories.length} записей в памяти`}
+            </p>
+            {memories.map(m => (
+              <div key={m.id} className="flex items-start gap-2.5 p-3 rounded-xl bg-card border border-border hover:border-primary/30 transition-colors">
+                <span className="text-base mt-0.5">{levelIcon(m.level)}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-foreground leading-relaxed">{m.content}</p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-xs">{m.category}</span>
+                    <span className="text-xs text-muted-foreground">{Math.round(m.confidence * 100)}% уверенность</span>
+                  </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground/60 mb-2">{section.hint}</p>
-                <textarea
-                  value={memory[section.key]}
-                  onChange={(e) => handleMemoryChange(section.key, e.target.value)}
-                  placeholder={`Агент будет записывать сюда информацию о тебе...\n\nТы тоже можешь добавить что-нибудь вручную.`}
-                  className="flex-1 min-h-[200px] bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none placeholder:text-muted-foreground/30 focus:border-primary/30 transition-colors resize-none leading-relaxed"
-                />
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-[10px] text-muted-foreground/40">
-                    {memory[section.key].length} символов · сохраняется автоматически
-                  </span>
-                  <button
-                    onClick={() => handleMemoryChange(section.key, "")}
-                    className="text-[11px] text-muted-foreground/50 hover:text-destructive transition-colors"
-                  >
-                    Очистить
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => api.agent.feedback(m.id, 'positive')} className="p-1 rounded hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-400 transition-colors">
+                    <Icon name="ThumbsUp" size={12} />
+                  </button>
+                  <button onClick={() => api.agent.feedback(m.id, 'negative')} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
+                    <Icon name="ThumbsDown" size={12} />
                   </button>
                 </div>
               </div>
             ))}
-          </div>
-        )}
-
-        {/* === НЕЙРОСЕТЬ === */}
-        {activeTab === "ai" && (
-          <div className="px-5 py-4 space-y-4">
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-2">Модель агента</div>
-
-              <div className="relative" ref={dropdownRef}>
-                <button
-                  onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-                  className="w-full flex items-center justify-between bg-card border border-border rounded-xl px-4 py-3 hover:border-primary/30 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-lg leading-none">{selectedModel.providerLabel}</span>
-                    <div className="text-left">
-                      <div className="text-sm font-medium">{selectedModel.name}</div>
-                      <div className="text-[11px] text-muted-foreground">{selectedModel.provider} · бесплатно</div>
-                    </div>
-                  </div>
-                  <Icon
-                    name="ChevronDown"
-                    size={16}
-                    className={`text-muted-foreground transition-transform ${modelDropdownOpen ? "rotate-180" : ""}`}
-                  />
-                </button>
-
-                {modelDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-card border border-border rounded-2xl shadow-xl z-50 overflow-hidden">
-                    <div className="max-h-72 overflow-y-auto py-1.5">
-                      {Object.entries(providerGroups).map(([providerName, models]) => (
-                        <div key={providerName}>
-                          <div className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">
-                            {models[0].providerLabel} {providerName}
-                          </div>
-                          {models.map((m) => (
-                            <button
-                              key={m.id}
-                              onClick={() => { setSelectedModelId(m.id); setModelDropdownOpen(false); }}
-                              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors hover:bg-secondary/50 ${
-                                selectedModelId === m.id ? "text-primary bg-primary/5" : "text-foreground"
-                              }`}
-                            >
-                              <span>{m.name}</span>
-                              {selectedModelId === m.id && <Icon name="Check" size={13} className="text-primary" />}
-                            </button>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {selectedModelId === "custom" && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors">
-                  <Icon name="Globe" size={14} className="text-muted-foreground flex-shrink-0" />
-                  <input
-                    value={customEndpoint}
-                    onChange={(e) => setCustomEndpoint(e.target.value)}
-                    placeholder="https://api.example.com/v1"
-                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/40 font-mono"
-                  />
-                </div>
-                <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors">
-                  <Icon name="Cpu" size={14} className="text-muted-foreground flex-shrink-0" />
-                  <input
-                    value={customModelName}
-                    onChange={(e) => setCustomModelName(e.target.value)}
-                    placeholder="название модели"
-                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/40"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="text-xs font-medium text-muted-foreground">API ключ</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground/50 bg-secondary px-2 py-0.5 rounded-full">необязательно</span>
-                  {selectedModel.docsUrl && (
-                    <a
-                      href={selectedModel.docsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] text-primary/70 hover:text-primary transition-colors flex items-center gap-0.5"
-                    >
-                      Получить <Icon name="ExternalLink" size={9} />
-                    </a>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/30 transition-colors">
-                <Icon name="Key" size={14} className="text-muted-foreground flex-shrink-0" />
-                <input
-                  type={showKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={`${selectedModel.keyPlaceholder} (оставь пустым для общего доступа)`}
-                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/40 font-mono min-w-0"
-                />
-                <button onClick={() => setShowKey(!showKey)} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
-                  <Icon name={showKey ? "EyeOff" : "Eye"} size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-3.5 bg-secondary/30 rounded-xl space-y-2.5">
-              <div className="flex items-start gap-2.5">
-                <Icon name="ShieldCheck" size={13} className="text-emerald-400 mt-0.5 flex-shrink-0" />
-                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                  <span className="text-foreground/70 font-medium">Свой ключ:</span> запросы идут напрямую к провайдеру, данные не проходят через наши серверы.
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Icon name="HardDrive" size={13} className="text-primary mt-0.5 flex-shrink-0" />
-                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                  <span className="text-foreground/70 font-medium">Память агента</span> хранится только на твоём устройстве. Никакой сервер её не получает.
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSave}
-              className="w-full py-3 bg-primary/20 text-primary rounded-xl text-sm font-medium hover:bg-primary/30 transition-colors"
-            >
-              Сохранить настройки
-            </button>
           </div>
         )}
       </div>
